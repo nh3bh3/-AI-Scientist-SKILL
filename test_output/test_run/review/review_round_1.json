@@ -1,0 +1,39 @@
+{
+  "round": 1,
+  "overall_score": 5.0,
+  "decision": "revise",
+  "sections": {
+    "novelty": {
+      "score": 5.0,
+      "comment": "",
+      "suggestions": []
+    },
+    "significance": {
+      "score": 5.0,
+      "comment": "",
+      "suggestions": []
+    },
+    "methodology": {
+      "score": 5.0,
+      "comment": "",
+      "suggestions": []
+    },
+    "experiments": {
+      "score": 5.0,
+      "comment": "",
+      "suggestions": []
+    },
+    "presentation": {
+      "score": 5.0,
+      "comment": "",
+      "suggestions": []
+    },
+    "completeness": {
+      "score": 5.0,
+      "comment": "",
+      "suggestions": []
+    }
+  },
+  "general_comments": [],
+  "improvement_plan": []
+}

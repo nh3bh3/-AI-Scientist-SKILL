@@ -1,0 +1,70 @@
+{
+  "review_type": "Enhanced Professional Review",
+  "total_rounds": 1,
+  "final_assessment": {
+    "overall_score": 6.5,
+    "decision": "revise",
+    "confidence": "medium",
+    "reproducibility_score": 6.0
+  },
+  "authenticity_analysis": {
+    "total_checks": 4,
+    "suspicious_findings": 4,
+    "details": [
+      {
+        "category": "results",
+        "is_suspicious": true,
+        "confidence": 0.4,
+        "evidence_count": 2
+      },
+      {
+        "category": "citations",
+        "is_suspicious": true,
+        "confidence": 0.15,
+        "evidence_count": 1
+      },
+      {
+        "category": "data",
+        "is_suspicious": true,
+        "confidence": 0.44999999999999996,
+        "evidence_count": 3
+      },
+      {
+        "category": "methods",
+        "is_suspicious": true,
+        "confidence": 0.6000000000000001,
+        "evidence_count": 3
+      }
+    ]
+  },
+  "ai_writing_analysis": {
+    "patterns_detected": 3,
+    "high_severity": 1,
+    "pattern_types": [
+      "high_ai_typical_words",
+      "medium_ai_typical_words",
+      "generic_statements"
+    ]
+  },
+  "round_by_round": [
+    {
+      "round": 1,
+      "score": 6.5,
+      "decision": "revise"
+    }
+  ],
+  "recommendations": {
+    "critical": [
+      "建议补充消融实验、误差分析，并提供原始数据验证",
+      "建议添加具体、可验证的参考文献，使用标准引用格式",
+      "建议详细描述数据集来源、预处理流程和数据划分策略",
+      "建议补充实现细节、超参数设置和计算复杂度分析"
+    ],
+    "for_ai_reduction": [
+      "减少使用典型的AI用词，尝试更自然的表达方式"
+    ],
+    "general": [
+      "改进建议"
+    ]
+  }
+}

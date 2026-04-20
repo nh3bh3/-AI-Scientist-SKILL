@@ -1,0 +1,17 @@
+{
+  "total_rounds": 2,
+  "final_score": 7.5,
+  "final_decision": "revise",
+  "rounds": [
+    {
+      "round": 1,
+      "score": 5.0,
+      "decision": "revise"
+    },
+    {
+      "round": 2,
+      "score": 7.5,
+      "decision": "revise"
+    }
+  ]
+}

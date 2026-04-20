@@ -1,0 +1,83 @@
+{
+  "round": 1,
+  "overall_score": 6.5,
+  "decision": "revise",
+  "sections": {},
+  "authenticity_checks": [
+    {
+      "category": "results",
+      "is_suspicious": true,
+      "confidence": 0.4,
+      "evidence": [
+        "缺少消融实验验证",
+        "缺少误差分析"
+      ],
+      "recommendation": "建议补充消融实验、误差分析，并提供原始数据验证"
+    },
+    {
+      "category": "citations",
+      "is_suspicious": true,
+      "confidence": 0.15,
+      "evidence": [
+        "缺少具体的作者引用格式（如 'Smith et al.'）"
+      ],
+      "recommendation": "建议添加具体、可验证的参考文献，使用标准引用格式"
+    },
+    {
+      "category": "data",
+      "is_suspicious": true,
+      "confidence": 0.44999999999999996,
+      "evidence": [
+        "缺少数据集描述部分",
+        "缺少数据预处理描述",
+        "缺少训练/测试集划分说明"
+      ],
+      "recommendation": "建议详细描述数据集来源、预处理流程和数据划分策略"
+    },
+    {
+      "category": "methods",
+      "is_suspicious": true,
+      "confidence": 0.6000000000000001,
+      "evidence": [
+        "方法部分缺少超参数描述",
+        "方法部分缺少网络层数/结构描述",
+        "缺少计算复杂度分析"
+      ],
+      "recommendation": "建议补充实现细节、超参数设置和计算复杂度分析"
+    }
+  ],
+  "ai_patterns": [
+    {
+      "pattern_type": "high_ai_typical_words",
+      "examples": [
+        "intricate"
+      ],
+      "severity": "high",
+      "suggestion": "减少使用典型的AI用词，尝试更自然的表达方式"
+    },
+    {
+      "pattern_type": "medium_ai_typical_words",
+      "examples": [
+        "leverage"
+      ],
+      "severity": "medium",
+      "suggestion": "减少使用典型的AI用词，尝试更自然的表达方式"
+    },
+    {
+      "pattern_type": "generic_statements",
+      "examples": [
+        "Further research is needed"
+      ],
+      "severity": "medium",
+      "suggestion": "用具体的量化结果替代模糊的定性描述"
+    }
+  ],
+  "reproducibility_score": 6.0,
+  "ethical_concerns": [],
+  "general_comments": [
+    "模拟审稿意见"
+  ],
+  "improvement_plan": [
+    "改进建议"
+  ]
+}

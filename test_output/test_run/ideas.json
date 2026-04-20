@@ -1,0 +1,26 @@
+{
+  "topic": "研究主题",
+  "total_ideas": 1,
+  "ideas": [
+    {
+      "id": 1,
+      "title": "基于CNN的人群密度估计方法",
+      "hypothesis": "卷积神经网络可以有效估计施工场地的人群密度",
+      "method": "使用ResNet作为骨干网络，结合密度图回归",
+      "expected_result": "在测试集上达到MAE < 10的性能",
+      "contribution": "提出适用于施工场景的轻量级密度估计模型",
+      "feasibility": 0.85,
+      "novelty": 0.75,
+      "significance": 0.8,
+      "related_work": [
+        "文献1",
+        "文献2"
+      ],
+      "keywords": [
+        "人群密度",
+        "CNN",
+        "施工安全"
+      ]
+    }
+  ]
+}
