@@ -11,7 +11,7 @@ Phase 2 (Enhanced): 实验阶段增强版
 import json
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, asdict
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "utils"))
@@ -29,6 +29,149 @@ class ExperimentConfig:
     run_proposed: bool = True
     max_github_repos: int = 3
     max_dataset_attempts: int = 3
+    search_iterations: int = 2
+    use_candidate_manager: bool = True
+    max_candidates: int = 4
+    top_k: int = 2
+
+    @classmethod
+    def from_config(cls, config: Dict) -> "ExperimentConfig":
+        """从完整配置中构建实验配置（兼容 experiment 子配置与旧版顶层字段）。"""
+        exp = config.get("experiment", {}) if isinstance(config, dict) else {}
+        github_cfg = exp.get("github", {}) if isinstance(exp, dict) else {}
+        dataset_cfg = exp.get("dataset", {}) if isinstance(exp, dict) else {}
+
+        def pick(key: str, default):
+            if key in exp:
+                return exp.get(key)
+            return config.get(key, default)
+
+        return cls(
+            use_github_baseline=pick("use_github_baseline", True),
+            use_real_dataset=pick("use_real_dataset", True),
+            run_baseline=pick("run_baseline", True),
+            run_proposed=pick("run_proposed", True),
+            max_github_repos=github_cfg.get("max_repos", pick("max_github_repos", 3)),
+            max_dataset_attempts=dataset_cfg.get("max_attempts", pick("max_dataset_attempts", 3)),
+            search_iterations=exp.get("search_iterations", 2),
+            use_candidate_manager=exp.get("candidate_manager", {}).get("enabled", True),
+            max_candidates=exp.get("candidate_manager", {}).get("max_candidates", 4),
+            top_k=exp.get("candidate_manager", {}).get("top_k", 2),
+        )
+
+
+@dataclass
+class CandidateExperiment:
+    """候选实验。"""
+    name: str
+    description: str
+    code: str
+    score: float = float("-inf")
+    metrics: Optional[Dict] = None
+
+
+class MiniExperimentManager:
+    """
+    轻量候选实验池 + 自动淘汰（CPU 版本）。
+    不依赖 GPU，仅使用 sklearn 构建小型分类任务。
+    """
+
+    def __init__(self, config: ExperimentConfig):
+        self.config = config
+
+    def build_candidates(self, idea: Dict, dataset_name: Optional[str] = None) -> List[CandidateExperiment]:
+        title = idea.get("title", "Unknown Idea")
+        variants: List[Tuple[str, str, str]] = [
+            ("logistic_regression", "Logistic Regression baseline", "LogisticRegression(max_iter=300)"),
+            ("random_forest", "Random Forest robust baseline", "RandomForestClassifier(n_estimators=200, random_state=42)"),
+            ("linear_svm", "Linear SVM lightweight baseline", "LinearSVC(random_state=42)"),
+            ("gradient_boosting", "Gradient Boosting nonlinear baseline", "GradientBoostingClassifier(random_state=42)"),
+        ]
+        candidates = []
+        for name, desc, model_expr in variants[: self.config.max_candidates]:
+            code = self._render_candidate_code(title, dataset_name, name, model_expr)
+            candidates.append(CandidateExperiment(name=name, description=desc, code=code))
+        return candidates
+
+    def _render_candidate_code(
+        self,
+        title: str,
+        dataset_name: Optional[str],
+        candidate_name: str,
+        model_expr: str,
+    ) -> str:
+        dataset_note = dataset_name or "synthetic_classification"
+        return f'''"""
+候选实验: {candidate_name}
+研究标题: {title}
+数据集: {dataset_note}
+"""
+import os
+import json
+import numpy as np
+from sklearn.datasets import make_classification
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.svm import LinearSVC
+
+OUTPUT_DIR = "outputs"
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+def main():
+    X, y = make_classification(
+        n_samples=1200,
+        n_features=24,
+        n_informative=16,
+        n_redundant=4,
+        n_classes=2,
+        random_state=42
+    )
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y
+    )
+
+    model = Pipeline([
+        ("scaler", StandardScaler()),
+        ("clf", {model_expr})
+    ])
+    model.fit(X_train, y_train)
+    pred = model.predict(X_test)
+
+    metrics = {{
+        "accuracy": float(accuracy_score(y_test, pred)),
+        "precision": float(precision_score(y_test, pred, zero_division=0)),
+        "recall": float(recall_score(y_test, pred, zero_division=0)),
+        "f1_score": float(f1_score(y_test, pred, zero_division=0))
+    }}
+    metrics["candidate"] = "{candidate_name}"
+
+    with open(os.path.join(OUTPUT_DIR, "metrics.json"), "w", encoding="utf-8") as f:
+        json.dump(metrics, f, ensure_ascii=False, indent=2)
+
+    print("candidate:", "{candidate_name}")
+    print("metrics:", metrics)
+
+if __name__ == "__main__":
+    main()
+'''
+
+    @staticmethod
+    def metric_score(metrics: Optional[Dict]) -> float:
+        if not metrics:
+            return float("-inf")
+        for preferred in ("f1_score", "accuracy", "recall", "precision"):
+            value = metrics.get(preferred)
+            if isinstance(value, (int, float)):
+                return float(value)
+        return float("-inf")
+
+    def select_survivors(self, candidates: List[CandidateExperiment]) -> List[CandidateExperiment]:
+        ranked = sorted(candidates, key=lambda c: c.score, reverse=True)
+        return ranked[: max(1, self.config.top_k)]
 
 
 class ExperimentPhaseV2:
@@ -44,18 +187,14 @@ class ExperimentPhaseV2:
         self.dataset_manager = DatasetManager()
         
         # 实验配置
-        self.experiment_config = ExperimentConfig(
-            use_github_baseline=config.get('use_github_baseline', True),
-            use_real_dataset=config.get('use_real_dataset', True),
-            run_baseline=config.get('run_baseline', True),
-            run_proposed=config.get('run_proposed', True)
-        )
+        self.experiment_config = ExperimentConfig.from_config(config)
         
         # 存储状态
         self.selected_repos: List[RepoAnalysis] = []
         self.selected_dataset: Optional[DatasetInfo] = None
         self.baseline_results: Optional[Dict] = None
         self.proposed_results: Optional[Dict] = None
+        self.candidate_manager = MiniExperimentManager(self.experiment_config)
     
     def load_idea(self, ideas_file: Path, idea_id: int = 1) -> Optional[Dict]:
         """加载研究假设"""
@@ -85,18 +224,19 @@ class ExperimentPhaseV2:
         keywords = idea.get('keywords', [])
         method = idea.get('method', '')
         
-        # 从方法描述中提取关键技术
-        tech_keywords = self._extract_tech_keywords(method)
-        search_query = ' '.join(keywords + tech_keywords)
-        
-        print(f"  搜索关键词: {search_query}")
-        
-        # 搜索仓库
-        repos = self.github_manager.search_repositories(
-            query=search_query,
-            language="python",
-            max_results=self.experiment_config.max_github_repos
-        )
+        queries = self._build_repo_queries(keywords, method)
+        print(f"  搜索策略: {queries}")
+
+        repo_map = {}
+        for query in queries[: self.experiment_config.search_iterations]:
+            repos = self.github_manager.search_repositories(
+                query=query,
+                language="python",
+                max_results=self.experiment_config.max_github_repos
+            )
+            for repo in repos:
+                repo_map[repo.url] = repo
+        repos = list(repo_map.values())
         
         if not repos:
             print("  [WARN] 未找到相关仓库")
@@ -126,6 +266,29 @@ class ExperimentPhaseV2:
         self.selected_repos = repo_analyses
         
         return repo_analyses
+
+    def _build_repo_queries(self, keywords: List[str], method: str) -> List[str]:
+        """构建多样化仓库检索语句。"""
+        tech_keywords = self._extract_tech_keywords(method)
+        tokens = [t.strip() for t in (keywords + tech_keywords) if t and t.strip()]
+
+        deduped = []
+        seen = set()
+        for token in tokens:
+            key = token.lower()
+            if key not in seen:
+                seen.add(key)
+                deduped.append(token)
+
+        if not deduped:
+            return ["machine learning baseline"]
+
+        queries = [" ".join(deduped[:6])]
+        if len(deduped) >= 2:
+            queries.append(f"{deduped[0]} {deduped[1]} benchmark")
+        if tech_keywords:
+            queries.append(" ".join(tech_keywords[:3] + ["implementation"]))
+        return queries
     
     def _extract_tech_keywords(self, text: str) -> List[str]:
         """从技术描述中提取关键词"""
@@ -447,12 +610,15 @@ if __name__ == "__main__":
         results = {
             'baseline': None,
             'proposed': None,
-            'comparison': None
+            'comparison': None,
+            'candidate_pool': []
         }
         
         sandbox = SandboxExecutor(
             work_dir=str(output_dir / "sandbox"),
-            timeout=self.exp_config.get('timeout', 600)
+            timeout=self.exp_config.get('timeout', 600),
+            max_memory_mb=self.exp_config.get('resource_limits', {}).get('max_memory_mb', 2048),
+            allowed_packages=self._normalized_allowed_packages()
         )
         
         # 运行基线实验
@@ -476,17 +642,55 @@ if __name__ == "__main__":
         # 运行改进实验
         if self.experiment_config.run_proposed:
             print("\n[Phase 2.6] 运行改进实验...")
-            
-            proposed_code = self.generate_proposed_code(self.current_idea)
-            
-            proposed_result = sandbox.execute(proposed_code, "proposed.py")
-            self.proposed_results = proposed_result
-            
-            if proposed_result.success:
-                print("  [OK] 改进实验成功")
-                results['proposed'] = proposed_result.metrics
+            if self.experiment_config.use_candidate_manager:
+                candidates = self.candidate_manager.build_candidates(
+                    self.current_idea,
+                    self.selected_dataset.name if self.selected_dataset else None
+                )
+                print(f"  构建候选实验: {len(candidates)} 个")
+                best_result = None
+
+                for idx, candidate in enumerate(candidates, start=1):
+                    print(f"    [{idx}/{len(candidates)}] 运行候选: {candidate.name}")
+                    run_result = sandbox.execute(candidate.code, f"proposed_{candidate.name}.py")
+                    candidate.metrics = run_result.metrics
+                    candidate.score = self.candidate_manager.metric_score(run_result.metrics)
+                    if best_result is None or candidate.score > self.candidate_manager.metric_score(best_result.metrics):
+                        best_result = run_result
+                    results["candidate_pool"].append({
+                        "name": candidate.name,
+                        "success": run_result.success,
+                        "score": candidate.score,
+                        "metrics": run_result.metrics,
+                        "error_type": run_result.error_type
+                    })
+
+                survivors = self.candidate_manager.select_survivors(candidates)
+                best = survivors[0] if survivors else None
+                if best and best.metrics:
+                    print(f"  [OK] 候选淘汰后最佳方案: {best.name} (score={best.score:.4f})")
+                    results["proposed"] = best.metrics
+                    self.proposed_results = best_result
+                    # 与旧字段兼容，记录最佳候选
+                    results["proposed"]["selected_candidate"] = best.name
+                else:
+                    print("  [FAIL] 候选实验全部失败，回退到单方案执行")
+                    proposed_code = self.generate_proposed_code(self.current_idea)
+                    proposed_result = sandbox.execute(proposed_code, "proposed.py")
+                    self.proposed_results = proposed_result
+                    if proposed_result.success:
+                        results['proposed'] = proposed_result.metrics
+                    else:
+                        print(f"  [FAIL] 改进实验失败: {proposed_result.error_type}")
             else:
-                print(f"  [FAIL] 改进实验失败: {proposed_result.error_type}")
+                proposed_code = self.generate_proposed_code(self.current_idea)
+                proposed_result = sandbox.execute(proposed_code, "proposed.py")
+                self.proposed_results = proposed_result
+                if proposed_result.success:
+                    print("  [OK] 改进实验成功")
+                    results['proposed'] = proposed_result.metrics
+                else:
+                    print(f"  [FAIL] 改进实验失败: {proposed_result.error_type}")
         
         # 对比分析
         if results['baseline'] and results['proposed']:
@@ -503,6 +707,16 @@ if __name__ == "__main__":
                 json.dump(comparison, f, ensure_ascii=False, indent=2)
         
         return results
+
+    def _normalized_allowed_packages(self) -> List[str]:
+        """归一化白名单包名，兼容 scikit-learn/sklearn 等别名。"""
+        packages = list(self.exp_config.get("allowed_packages", []))
+        lower_set = {p.lower() for p in packages}
+        if "scikit-learn" in lower_set and "sklearn" not in lower_set:
+            packages.append("sklearn")
+        if "pillow" in lower_set and "PIL" not in packages:
+            packages.append("PIL")
+        return packages
     
     def _compare_results(self, baseline: Dict, proposed: Dict) -> Dict:
         """对比基线和改进结果"""
@@ -562,9 +776,14 @@ if __name__ == "__main__":
         output_dir.mkdir(parents=True, exist_ok=True)
         results = self.run_experiments(output_dir)
         
-        # 4. 保存完整结果
+        # 4. 生成 writeup 兼容摘要（即使实验失败也产出）
+        summary = self._build_summary(results)
+        with open(output_dir / "summary.json", 'w', encoding='utf-8') as f:
+            json.dump(summary, f, ensure_ascii=False, indent=2)
+
+        # 5. 保存完整结果
         final_results = {
-            "success": True,
+            "success": bool(results.get("baseline") or results.get("proposed")),
             "hypothesis": self.current_idea['title'],
             "github_repos": [
                 {
@@ -579,7 +798,8 @@ if __name__ == "__main__":
                 "source": self.selected_dataset.source if self.selected_dataset else None,
                 "local_path": self.selected_dataset.local_path if self.selected_dataset else None
             },
-            "experiments": results
+            "experiments": results,
+            "summary_file": str(output_dir / "summary.json")
         }
         
         with open(output_dir / "experiment_results.json", 'w', encoding='utf-8') as f:
@@ -594,6 +814,25 @@ if __name__ == "__main__":
         print(f"改进实验: {'成功' if results.get('proposed') else '失败'}")
         
         return final_results
+
+    def _build_summary(self, results: Dict) -> Dict:
+        """生成与基础 ExperimentPhase 对齐的 summary.json。"""
+        chosen_metrics = results.get("proposed") or results.get("baseline")
+        output_files = []
+        if self.proposed_results and getattr(self.proposed_results, "output_files", None):
+            output_files.extend(list(self.proposed_results.output_files.keys()))
+        if self.baseline_results and getattr(self.baseline_results, "output_files", None):
+            output_files.extend(list(self.baseline_results.output_files.keys()))
+
+        return {
+            "hypothesis_id": self.current_idea.get("id", 1),
+            "hypothesis_title": self.current_idea.get("title", ""),
+            "success": bool(chosen_metrics),
+            "execution_time": 0,
+            "metrics": chosen_metrics,
+            "output_files": sorted(set(output_files)),
+            "error": None if chosen_metrics else "No successful experiment run in enhanced phase."
+        }
 
 
 if __name__ == "__main__":

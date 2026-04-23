@@ -57,6 +57,12 @@ experiment:
     kaggle_token_path: null
     # Hugging Face Token
     hf_token: null
+
+  # 轻量候选实验池（CPU-only，不依赖GPU）
+  candidate_manager:
+    enabled: true
+    max_candidates: 4
+    top_k: 2
   
   # 允许使用的 Python 包（白名单）
   allowed_packages:

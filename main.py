@@ -87,7 +87,15 @@ class AIResearchAssistant:
                 "use_github_baseline": True,
                 "use_real_dataset": True,
                 "run_baseline": True,
-                "run_proposed": True
+                "run_proposed": True,
+                "allowed_packages": [
+                    "numpy",
+                    "pandas",
+                    "matplotlib",
+                    "scikit-learn",
+                    "sklearn",
+                    "scipy"
+                ]
             },
             "review": {
                 "rounds": 2,

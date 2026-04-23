@@ -54,8 +54,7 @@ def test_fake_content_detection():
     
     suspicious_count = sum(1 for r in results if r.is_suspicious)
     print(f"\n发现 {suspicious_count}/4 项可疑内容")
-    
-    return suspicious_count > 0
+    assert suspicious_count > 0
 
 
 def test_ai_writing_detection():
@@ -92,8 +91,7 @@ def test_ai_writing_detection():
         print(f"     examples: {pattern.examples[:2]}")
     
     print(f"\n共发现 {len(patterns)} 个特征")
-    
-    return len(patterns) > 0
+    assert len(patterns) > 0
 
 
 def test_github_search():
@@ -119,10 +117,11 @@ def test_github_search():
         for i, repo in enumerate(repos, 1):
             print(f"  {i}. {repo.name} ({repo.stars} stars)")
             print(f"     {repo.description[:80]}...")
-        return True
+        assert len(repos) > 0
     else:
         print("  未找到仓库（可能达到API限制）")
-        return False
+        # 网络或 API 限流时不强制失败
+        assert repos == []
 
 
 def test_dataset_search():
@@ -148,10 +147,10 @@ def test_dataset_search():
         for i, ds in enumerate(datasets, 1):
             print(f"  {i}. {ds.name} ({ds.source})")
             print(f"     {ds.description[:80]}...")
-        return True
+        assert len(datasets) > 0
     else:
         print("  未找到数据集")
-        return False
+        assert datasets == []
 
 
 def test_enhanced_review_integration():
@@ -223,7 +222,68 @@ Further research is needed in this area.
     print(f"  虚假内容问题: {result['authenticity_issues']}")
     print(f"  AI写作特征: {result['ai_patterns_found']}")
     
-    return result['authenticity_issues'] > 0 or result['ai_patterns_found'] > 0
+    assert result['authenticity_issues'] > 0 or result['ai_patterns_found'] > 0
+
+
+def test_experiment_config_from_nested_config():
+    """确保增强实验配置正确读取 experiment 子配置。"""
+    from phases.experiment_v2 import ExperimentConfig
+
+    cfg = {
+        "experiment": {
+            "use_github_baseline": False,
+            "use_real_dataset": False,
+            "run_baseline": False,
+            "run_proposed": True,
+            "github": {"max_repos": 7},
+            "dataset": {"max_attempts": 5},
+            "search_iterations": 3
+        }
+    }
+    exp = ExperimentConfig.from_config(cfg)
+    assert exp.use_github_baseline is False
+    assert exp.use_real_dataset is False
+    assert exp.run_baseline is False
+    assert exp.run_proposed is True
+    assert exp.max_github_repos == 7
+    assert exp.max_dataset_attempts == 5
+    assert exp.search_iterations == 3
+
+
+def test_mini_candidate_manager_build_and_select():
+    """测试候选实验池构建与淘汰逻辑。"""
+    from phases.experiment_v2 import ExperimentConfig, MiniExperimentManager, CandidateExperiment
+
+    cfg = ExperimentConfig()
+    manager = MiniExperimentManager(cfg)
+    idea = {"title": "测试课题", "keywords": ["nlp"], "method": "classification"}
+
+    candidates = manager.build_candidates(idea)
+    assert len(candidates) >= 2
+    assert all("metrics.json" in c.code for c in candidates)
+
+    # 模拟评分并淘汰
+    mocked = [
+        CandidateExperiment(name="a", description="a", code="", score=0.7),
+        CandidateExperiment(name="b", description="b", code="", score=0.9),
+        CandidateExperiment(name="c", description="c", code="", score=0.8),
+    ]
+    survivors = manager.select_survivors(mocked)
+    assert survivors[0].name == "b"
+
+
+def test_allowed_packages_normalization():
+    """测试白名单包名归一化。"""
+    from phases.experiment_v2 import ExperimentPhaseV2
+
+    phase = ExperimentPhaseV2({
+        "experiment": {
+            "allowed_packages": ["numpy", "scikit-learn", "Pillow"]
+        }
+    })
+    pkgs = phase._normalized_allowed_packages()
+    assert "sklearn" in pkgs
+    assert "PIL" in pkgs
 
 
 def main():

@@ -11,7 +11,9 @@ description: >-
 
 # AI-Research-Assistant（科研助手 Skill）
 
-本仓库是面向 **Cursor Agent** 的操作说明：在对话中按阶段调用本项目的 `main.py` 与各 `phases/`，完成「构思 → 实验 → 撰写 → 审稿」闭环。设计参考 [SakanaAI/AI-Scientist-v2](https://github.com/SakanaAI/AI-Scientist-v2)，但 **不是** 该仓库的 Python 复刻（上游依赖 Linux/CUDA、BFTS 树搜索与独立脚本链）。
+本仓库是面向 **OpenClaw / Codex Agent** 的操作说明：在对话中按阶段调用本项目的 `main.py` 与各 `phases/`，完成「构思 → 实验 → 撰写 → 审稿」闭环。设计参考 [SakanaAI/AI-Scientist-v2](https://github.com/SakanaAI/AI-Scientist-v2)，但 **不是** 该仓库的 Python 复刻（上游依赖 Linux/CUDA、BFTS 树搜索与独立脚本链）。
+
+> 现实建议：本 Skill 应被视为「可扩展的轻量复现框架」，而不是一次性端到端黑盒。若目标是最大程度贴近上游行为，优先逐步补齐“多轮探索、实验管理、真实性核验”三大能力。
 
 ---
 
@@ -20,7 +22,7 @@ description: >-
 | AI-Scientist-v2（上游） | 本 Skill / 仓库 |
 |------------------------|-----------------|
 | `perform_ideation_temp_free.py` + workshop Markdown → JSON | `phases/ideation.py`：主题 Markdown → `ideas.json`（由 Agent 调 LLM + 可选检索完成） |
-| `launch_scientist_bfts.py` + `bfts_config.yaml`（BFTS 树搜索、多 worker） | `phases/experiment.py` / `experiment_v2.py`：顺序实验 + 重试调试，**无**完整 BFTS 实现 |
+| `launch_scientist_bfts.py` + `bfts_config.yaml`（BFTS 树搜索、多 worker） | `phases/experiment.py` / `experiment_v2.py`：顺序实验 + 轻量多查询探索（`search_iterations`），**无**完整 BFTS 实现 |
 | 多模型：`model_writeup` / `model_citation` / `model_review` 等 | `config.yaml` 中 `models.ideation|experiment|writeup|review`（由集成方映射到实际 API） |
 | Semantic Scholar、`S2_API_KEY` | `config.yaml` 的 `search.sources` 可含 `semantic_scholar`；有 key 时降低限流风险 |
 | 沙箱警告：执行 LLM 生成代码 | **必须** 限定工作目录、超时、白名单包；执行前向用户展示代码并得到确认（若环境策略要求） |
@@ -34,6 +36,7 @@ description: >-
 1. **先读** 用户仓库根目录的 `config.yaml`，尊重 `experiment`、`review`、`output`、`search` 等开关。
 2. **构思**：读取用户提供的主题 Markdown，解析标题与「关键词」等章节；调用项目内逻辑或自行用 LLM 生成结构化 `ideas.json`，字段需与 `phases/ideation.py` 中 `ResearchIdea` 一致（含 `id`, `title`, `hypothesis`, `method`, `expected_result`, `contribution`, `feasibility`, `novelty`, `significance`, `related_work`, `keywords`）。
 3. **实验**：优先使用增强版 `ExperimentPhaseV2`（`main.py` 默认）。在沙盒目录运行生成代码，收集 `summary.json`、`experiment_results.json`、图表与日志；失败则按 `experiment.max_retries` 分析日志并迭代。
+   - 增强版支持 `candidate_manager`（CPU-only）：先构建候选实验池，再按指标自动淘汰并保留 top-k。
 4. **撰写**：用 **真实指标与文件路径** 写 `paper.md`，禁止编造表格数值；图不可用则按 `output.figure_fallback` 做文字化描述。
 5. **审稿**：增强审稿 `ReviewPhaseV2` 需要实验目录做交叉核对时，单独跑 `review` 阶段应传入 `--experiment-dir`（指向含 `experiment_results.json` 等的实验输出目录）。
 
@@ -93,7 +96,8 @@ research_output/
 └── pipeline_record.json
 ```
 
-增强实验阶段可能包含 `github_repos/`、`datasets/`、`comparison.json` 等，以 `phases/experiment_v2.py` 实际输出为准。
+增强实验阶段可能包含 `github_repos/`、`datasets/`、`comparison.json` 等，以 `phases/experiment_v2.py` 实际输出为准。  
+其中 `experiment.search_iterations` 可控制仓库检索轮数（用于提升基线覆盖率）。
 
 ---
 
@@ -110,6 +114,18 @@ research_output/
 - **风险**：执行 LLM 生成的代码可能导致危险依赖、非预期进程或外联；默认应在隔离环境（容器/专用机）运行。  
 - **披露**：若成果用于正式稿件，须在方法或致谢中 **明确披露** 使用自动化或 LLM 辅助（上游许可证亦要求显著披露；发表前请核对上游 [LICENSE](https://github.com/SakanaAI/AI-Scientist-v2/blob/main/LICENSE) 与你方单位政策）。  
 - **本仓库 `config.yaml`**：`experiment.forbidden_operations`、`allowed_packages`、`resource_limits` 用于收紧执行面；Agent 不应擅自关闭这些约束。
+
+---
+
+## 与上游能力差距（建议优先补齐）
+
+若你希望“效果接近 AI-Scientist-v2”，建议按下面顺序迭代：
+
+1. **实验管理器升级**：从单轮执行扩展为「候选方案池 + 自动淘汰 + 最优保留」。  
+2. **检索真实性**：将文献与引用做可核验落盘（DOI/arXiv/URL + 抓取时间）。  
+3. **结果审计**：将审稿阶段的可疑项映射回实验日志和原始指标文件。  
+4. **失败恢复**：支持从中间状态恢复（idea 级、round 级、review 级）。  
+5. **多 worker 并行**（可选）：在资源许可时并行跑 baseline/proposed 及不同 seed。  
 
 ---
 
