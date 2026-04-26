@@ -64,17 +64,7 @@ class AIResearchAssistant:
     @staticmethod
     def _load_config_static(config_path: Optional[str]) -> Dict:
         """静态方法：加载配置"""
-        if config_path and Path(config_path).exists():
-            with open(config_path, 'r', encoding='utf-8') as f:
-                try:
-                    import yaml
-                    return yaml.safe_load(f)
-                except ImportError:
-                    # 如果没有 yaml，尝试 json
-                    return json.load(f)
-        
-        # 默认配置
-        return {
+        default_config = {
             "models": {
                 "ideation": "gpt-4o",
                 "experiment": "claude-3-5-sonnet",
@@ -107,6 +97,22 @@ class AIResearchAssistant:
             },
             "use_enhanced_experiment": True
         }
+
+        if config_path and Path(config_path).exists():
+            with open(config_path, 'r', encoding='utf-8') as f:
+                try:
+                    import yaml
+                    return yaml.safe_load(f)
+                except ImportError:
+                    try:
+                        f.seek(0)
+                        return json.load(f)
+                    except json.JSONDecodeError:
+                        print("[WARN] 未安装 PyYAML，且配置文件不是 JSON，已使用默认配置。")
+                        return default_config
+        
+        # 默认配置
+        return default_config
     
     def _load_config(self, config_path: Optional[str]) -> Dict:
         """加载配置（实例方法）"""

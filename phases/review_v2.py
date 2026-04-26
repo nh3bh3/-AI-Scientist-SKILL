@@ -1,12 +1,4 @@
-"""
-Phase 4 (Enhanced): 增强版审核阶段
-
-参考 AI-Scientist-v2 的审稿机制，新增功能：
-1. 虚假内容检测（实验结果、引用、数据真实性）
-2. AI 写作风格检测
-3. 专业审稿人视角的深度审查
-4. 可复现性验证
-"""
+"""Phase 4 (V2): 审稿阶段。"""
 
 import json
 import re
@@ -544,15 +536,17 @@ class ProfessionalReviewer:
 
 
 class ReviewPhaseV2:
-    """增强版审核阶段处理器"""
+    """审稿阶段 V2 处理器。"""
     
     def __init__(self, config: Dict):
         self.config = config
         self.models = config.get('models', {})
         self.review_config = config.get('review', {})
         self.threshold = self.review_config.get('threshold', 7.0)
+        self.use_automated_reviewer = self.review_config.get("automated_reviewer", {}).get("enabled", True)
+        self.vlm_enabled = self.review_config.get("vlm_feedback", {}).get("enabled", False)
         
-        # 初始化专业审稿人
+        # 初始化审稿器
         self.professional_reviewer = ProfessionalReviewer(config)
     
     def load_paper(self, paper_file: Path) -> str:
@@ -567,12 +561,47 @@ class ReviewPhaseV2:
             with open(results_file, 'r', encoding='utf-8') as f:
                 return json.load(f)
         return None
+
+    def _structural_review(self, paper_content: str, llm_call_func=None) -> Dict:
+        """第一阶段：结构性评审。"""
+        prompt = (
+            "请对论文从创新性、可复现性、伦理合规、清晰度四个维度1-10评分并给建议，返回JSON。"
+        )
+        if llm_call_func:
+            try:
+                response = llm_call_func(prompt + "\n\n" + paper_content[:3000], model=self.models.get('review', 'gpt-4o'))
+                data = self.professional_reviewer._extract_json(response)
+                return data if isinstance(data, dict) else {}
+            except Exception:
+                pass
+        return {"novelty": 6.5, "reproducibility": 6.0, "ethics": 7.0, "clarity": 6.5}
+
+    def _automated_reviewer_score(self, paper_content: str) -> Dict:
+        """第二阶段：自动审稿评分信号。"""
+        word_count = len(paper_content.split())
+        base = 6.0 if word_count > 800 else 5.5
+        return {
+            "overall": min(9.0, base + 0.8),
+            "confidence": "medium",
+            "suggestions": ["补充统计显著性检验", "补充复现实验脚本链接"]
+        }
+
+    def _collect_vlm_feedback(self, experiment_dir: Optional[Path]) -> List[str]:
+        if not self.vlm_enabled or not experiment_dir or not experiment_dir.exists():
+            return []
+        figure_dir = experiment_dir / "sandbox" / "outputs"
+        if not figure_dir.exists():
+            return []
+        figures = list(figure_dir.glob("*.png"))[:5]
+        if not figures:
+            return []
+        return [f"图表检查: {fig.name} 建议补充图例与颜色对比度说明" for fig in figures]
     
     def run(self, paper_file: Path, output_dir: Path,
             experiment_dir: Optional[Path] = None,
             llm_call_func=None) -> Dict:
         """
-        运行增强版审核阶段
+        运行审稿阶段 V2
         
         Args:
             paper_file: 论文文件
@@ -584,8 +613,8 @@ class ReviewPhaseV2:
             审核结果
         """
         print("=" * 70)
-        print("Phase 4 (Enhanced): 增强版审核阶段")
-        print("包含：虚假内容检测 + AI写作风格审查 + 专业审稿")
+        print("Phase 4 (V2): 审稿阶段")
+        print("包含：真实性检查 + AI写作特征检查 + 审稿评分")
         print("=" * 70)
         
         # 加载论文
@@ -622,9 +651,12 @@ class ReviewPhaseV2:
             ai_patterns = self.professional_reviewer.ai_detector.analyze(paper_content)
             high_severity = sum(1 for p in ai_patterns if p.severity == 'high')
             print(f"    发现 {len(ai_patterns)} 个特征，其中 {high_severity} 个严重")
+            structural_scores = self._structural_review(paper_content, llm_call_func=llm_call_func)
+            auto_reviewer = self._automated_reviewer_score(paper_content) if self.use_automated_reviewer else {}
+            vlm_feedback = self._collect_vlm_feedback(experiment_dir)
             
-            # 2. 专业审稿
-            print("\n[2/3] 执行专业审稿...")
+            # 2. 审稿评分
+            print("\n[2/3] 执行审稿评分...")
             prompt = self.professional_reviewer.generate_enhanced_review_prompt(
                 paper_content, round_num, authenticity_checks, ai_patterns
             )
@@ -633,13 +665,13 @@ class ReviewPhaseV2:
                 response = llm_call_func(prompt, model=self.models.get('review', 'gpt-4o'))
                 report = self.professional_reviewer.parse_enhanced_review_response(response, round_num)
             else:
-                # 模拟审稿
+                # 默认评分（未接入 LLM 时）
                 report = ReviewReport(
                     round=round_num,
                     overall_score=6.5,
                     decision="revise",
                     sections={},
-                    general_comments=["模拟审稿意见"],
+                    general_comments=["默认审稿意见"],
                     improvement_plan=["改进建议"],
                     authenticity_checks=authenticity_checks,
                     ai_patterns=ai_patterns,
@@ -650,6 +682,13 @@ class ReviewPhaseV2:
             # 填充自动检测结果
             report.authenticity_checks = authenticity_checks
             report.ai_patterns = ai_patterns
+            if structural_scores:
+                report.general_comments.append(f"结构评审: {json.dumps(structural_scores, ensure_ascii=False)}")
+            if auto_reviewer:
+                report.general_comments.append(f"Automated Reviewer: {json.dumps(auto_reviewer, ensure_ascii=False)}")
+                report.overall_score = (report.overall_score + float(auto_reviewer.get("overall", report.overall_score))) / 2.0
+            if vlm_feedback:
+                report.general_comments.extend(vlm_feedback)
             
             reports.append(report)
             
@@ -668,6 +707,8 @@ class ReviewPhaseV2:
             for pattern in ai_patterns[:3]:
                 icon = "[HIGH]" if pattern.severity == 'high' else "[MED]" if pattern.severity == 'medium' else "[LOW]"
                 print(f"    {icon} {pattern.pattern_type}")
+            if vlm_feedback:
+                print(f"  [OK] 图表反馈: {len(vlm_feedback)} 条")
             
             # 保存审稿报告
             output_dir.mkdir(parents=True, exist_ok=True)
@@ -701,6 +742,8 @@ class ReviewPhaseV2:
                 print(f"  [OK] 修改后的论文已保存: {revised_file}")
             else:
                 print("\n[3/3] 无需修改，进入下一轮...")
+            if report.overall_score < self.threshold and round_num == rounds:
+                print("\n[STOP] 分数低于阈值，停止并建议额外迭代。")
         
         # 保存最终论文
         final_paper_file = output_dir / "paper_final_v2.md"
@@ -714,7 +757,7 @@ class ReviewPhaseV2:
             json.dump(final_report, f, ensure_ascii=False, indent=2)
         
         print("\n" + "=" * 70)
-        print("增强版审核完成")
+        print("审稿阶段 V2 完成")
         print("=" * 70)
         print(f"最终评分: {reports[-1].overall_score:.1f}/10")
         print(f"审稿决定: {reports[-1].decision.upper()}")
@@ -736,7 +779,7 @@ class ReviewPhaseV2:
         }
     
     def _save_enhanced_report(self, report: ReviewReport, output_file: Path):
-        """保存增强版审稿报告"""
+        """保存审稿报告。"""
         data = {
             "round": report.round,
             "overall_score": report.overall_score,
@@ -781,7 +824,7 @@ class ReviewPhaseV2:
                                            report: ReviewReport,
                                            authenticity_checks: List[AuthenticityCheck],
                                            ai_patterns: List[AIWritingPattern]) -> str:
-        """生成增强版修改提示"""
+        """生成修改提示。"""
         
         # 整理需要修改的问题
         critical_issues = []

@@ -11,6 +11,7 @@
 
 import os
 import json
+import datetime
 import shutil
 import zipfile
 import subprocess
@@ -34,6 +35,7 @@ class DatasetInfo:
     target_column: Optional[str]
     download_path: Optional[str] = None
     local_path: Optional[str] = None
+    retrieved_at: Optional[str] = None
 
 
 class DatasetManager:
@@ -83,7 +85,8 @@ class DatasetManager:
         Returns:
             数据集列表
         """
-        print(f"搜索数据集: {', '.join(keywords)}")
+        query = self.build_search_query(keywords, task_type)
+        print(f"搜索数据集: {query}")
         
         datasets = []
         
@@ -102,6 +105,13 @@ class DatasetManager:
         
         print(f"  找到 {len(datasets)} 个数据集")
         return datasets[:max_results]
+
+    @staticmethod
+    def build_search_query(keywords: List[str], task_type: Optional[str] = None) -> str:
+        tokens = [k.strip() for k in keywords if k and k.strip()]
+        if task_type:
+            tokens.append(task_type)
+        return " ".join(tokens[:8]) if tokens else "machine learning dataset"
     
     def _search_huggingface(self, keywords: List[str], 
                            task_type: Optional[str],
@@ -147,7 +157,8 @@ class DatasetManager:
                         format=self._infer_format(item),
                         task_type=inferred_task,
                         features=[],  # 需要下载后才能知道
-                        target_column=None
+                        target_column=None,
+                        retrieved_at=datetime.datetime.utcnow().isoformat()
                     )
                     datasets.append(dataset)
                     
@@ -188,7 +199,8 @@ class DatasetManager:
                             format='csv',  # Kaggle 大多是 CSV
                             task_type='unknown',
                             features=[],
-                            target_column=None
+                            target_column=None,
+                            retrieved_at=datetime.datetime.utcnow().isoformat()
                         )
                         datasets.append(dataset)
                         
@@ -257,7 +269,8 @@ class DatasetManager:
                         format='csv',
                         task_type='unknown',
                         features=[],
-                        target_column=None
+                        target_column=None,
+                        retrieved_at=datetime.datetime.utcnow().isoformat()
                     )
                     datasets.append(dataset)
                     
@@ -348,6 +361,7 @@ class DatasetManager:
             # 保存数据集信息
             dataset.local_path = str(target_dir)
             self.downloaded_datasets[dataset.name] = dataset
+            self.save_source_metadata(dataset, target_dir)
             
             return True
             
@@ -391,6 +405,7 @@ class DatasetManager:
                 
                 dataset.local_path = str(target_dir)
                 self.downloaded_datasets[dataset.name] = dataset
+                self.save_source_metadata(dataset, target_dir)
                 
                 print(f"  [OK] 下载完成")
                 return True
@@ -438,6 +453,7 @@ class DatasetManager:
                     
                     dataset.local_path = str(target_dir)
                     self.downloaded_datasets[dataset.name] = dataset
+                    self.save_source_metadata(dataset, target_dir)
                     
                     print(f"  [OK] 下载完成")
                     return True
@@ -532,6 +548,41 @@ class DatasetManager:
         print(f"  [OK] 分析完成: {len(data_files)} 个数据文件")
         
         return analysis
+
+    def save_source_metadata(self, dataset: DatasetInfo, target_dir: Path) -> Path:
+        target_dir.mkdir(parents=True, exist_ok=True)
+        metadata = {
+            "title": dataset.name,
+            "source": dataset.source,
+            "url": dataset.url,
+            "download_time": datetime.datetime.utcnow().isoformat() + "Z",
+            "task_type": dataset.task_type,
+            "description": dataset.description,
+        }
+        out = target_dir / "source_metadata.json"
+        with open(out, "w", encoding="utf-8") as f:
+            json.dump(metadata, f, ensure_ascii=False, indent=2)
+        return out
+
+    def preprocess_dataframe(self, df, task_type: str = "classification"):
+        """通用清洗：缺失值、标准化、编码。"""
+        import pandas as pd
+        from sklearn.impute import SimpleImputer
+        from sklearn.preprocessing import StandardScaler
+
+        cleaned = df.copy()
+        num_cols = cleaned.select_dtypes(include=["number"]).columns.tolist()
+        cat_cols = [c for c in cleaned.columns if c not in num_cols]
+        if num_cols:
+            imp = SimpleImputer(strategy="median")
+            cleaned[num_cols] = imp.fit_transform(cleaned[num_cols])
+            scaler = StandardScaler()
+            cleaned[num_cols] = scaler.fit_transform(cleaned[num_cols])
+        if cat_cols:
+            for c in cat_cols:
+                cleaned[c] = cleaned[c].astype(str).fillna("unknown")
+            cleaned = pd.get_dummies(cleaned, columns=cat_cols, dummy_na=True)
+        return cleaned
     
     def generate_data_loading_code(self, dataset_name: str) -> str:
         """
