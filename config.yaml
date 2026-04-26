@@ -1,254 +1,41 @@
-# AI-Research-Assistant 配置文件
-
-# ==================== 模型配置 ====================
 models:
-  # 构思阶段：需要强创意和推理能力
   ideation: gpt-4o
-  
-  # 实验阶段：需要代码生成和调试能力
   experiment: claude-3-5-sonnet-20241022
-  
-  # 撰写阶段：需要学术写作能力
   writeup: gpt-4o
-  
-  # 审核阶段：需要批判性思维
   review: gpt-4o
 
-# ==================== 实验配置 ====================
+ideation:
+  allow_mock: false
+  require_keywords: true
+
 experiment:
-  # 最大重试次数（代码执行失败时）
-  max_retries: 3
-  
-  # 单次执行超时（秒）
-  timeout: 600
-  
-  # 是否自动生成图表
-  generate_plots: true
-  
-  # 是否使用 GitHub 基线
   use_github_baseline: true
-  
-  # 是否使用真实数据集
   use_real_dataset: true
-  
-  # 是否运行基线实验
   run_baseline: true
-  
-  # 是否运行改进实验
   run_proposed: true
-  
-  # GitHub 搜索配置
+  strict_dataset: true
+  strict_baseline: false
+  allow_synthetic_fallback: false
   github:
-    # 最大搜索仓库数
-    max_repos: 3
-    # GitHub API Token（可选，提高速率限制）
     token: null
-  
-  # 数据集配置
+    clone_retries: 2
+    clone_timeout: 120
+    zip_fallback: true
+    max_repos: 3
   dataset:
-    # 最大尝试下载的数据集数
-    max_attempts: 3
-    # 优先数据源顺序
-    preferred_sources:
-      - huggingface
-      - kaggle
-      - uci
-    # Kaggle API Token 路径
-    kaggle_token_path: null
-    # Hugging Face Token
-    hf_token: null
+    local_path: null
+    preferred_sources: [local, huggingface, kaggle, uci]
 
-  # 轻量候选实验池（CPU-only，不依赖GPU）
-  candidate_manager:
-    enabled: true
-    max_candidates: 4
-    top_k: 2
-    model_types:
-      - LogisticRegression
-      - RandomForest
-      - MLPClassifier
-      - Transformer
-    enable_gpu: true
-    max_parallel: 2
+writeup:
+  allow_draft_without_valid_experiment: false
+  forbid_uncited_related_work: true
 
-  search:
-    strategy: bfts
-  bfts:
-    max_depth: 2
-    max_nodes: 8
-    branching_factor: 2
-  resume_from: null
-  
-  # 允许使用的 Python 包（白名单）
-  allowed_packages:
-    - numpy
-    - pandas
-    - matplotlib
-    - seaborn
-    - scikit-learn
-    - torch
-    - torchvision
-    - scipy
-    - jieba
-    - wordcloud
-    - networkx
-    - plotly
-    - Pillow
-    - requests
-    - beautifulsoup4
-    - datasets
-    - transformers
-    - tqdm
-  
-  # 禁止的操作
-  forbidden_operations:
-    - os.system
-    - subprocess
-    - exec
-    - eval
-    - __import__
-    - open('/etc')
-    - open('C:\\Windows')
-  
-  # 资源限制
-  resource_limits:
-    max_memory_mb: 2048
-    max_cpu_time: 180
-
-# ==================== 审核配置 ====================
 review:
-  # 审核轮数
   rounds: 2
-  
-  # 通过分数阈值（满分10分）
   threshold: 7.0
-  
-  # 使用增强版审稿（包含虚假内容检测和AI写作审查）
   use_enhanced: true
-  
-  # 审核维度
-  dimensions:
-    - novelty           # 创新性
-    - significance      # 重要性
-    - methodology       # 方法论
-    - experiments       # 实验设计
-    - presentation      # 表达清晰度
-    - completeness      # 完整性
-    - reproducibility   # 可复现性（增强版）
-    - ethical_soundness # 伦理合理性（增强版）
-  
-  # 虚假内容检测配置
-  authenticity_check:
-    enabled: true
-    check_results: true      # 检查实验结果
-    check_citations: true    # 检查引用
-    check_data: true         # 检查数据声明
-    check_methods: true      # 检查方法论
-  
-  # AI写作检测配置
-  ai_detection:
-    enabled: true
-    check_typical_words: true     # 检查AI典型用词
-    check_sentence_patterns: true # 检查句式模式
-    check_generic_statements: true # 检查通用表述
-  automated_reviewer:
-    enabled: true
-  vlm_feedback:
-    enabled: true
+  block_on_high_authenticity_risk: true
 
-# ==================== 输出配置 ====================
-output:
-  # 输出格式：markdown / latex
-  format: markdown
-  
-  # 语言：zh-CN / en
-  language: zh-CN
-  
-  # 引用格式：GB/T7714 / APA / MLA / Chicago
-  citation_style: GB/T7714
-  
-  # 是否包含图表
-  include_figures: true
-  
-  # 图表无法生成时的处理方式：describe / placeholder / skip
-  figure_fallback: describe
-
-# ==================== 检索配置 ====================
 search:
-  # 是否启用文献检索
   enabled: true
-  
-  # 检索来源
-  sources:
-    - arxiv
-    - google_scholar
-    - semantic_scholar
-    - baidu_xueshu
-  
-  # 每个来源最大结果数
-  max_results_per_source: 10
-  
-  # 检索年份范围
-  year_range:
-    start: 2020
-    end: 2026
-
-# ==================== 论文结构配置 ====================
-paper_structure:
-  # 论文章节（按顺序）
-  sections:
-    - abstract
-    - introduction
-    - related_work
-    - methodology
-    - experiments
-    - results
-    - discussion
-    - conclusion
-    - references
-  
-  # 每节字数建议
-  word_count:
-    abstract: 300
-    introduction: 800
-    related_work: 600
-    methodology: 1000
-    experiments: 800
-    results: 600
-    discussion: 500
-    conclusion: 400
-  
-  # 必须包含的元素
-  required_elements:
-    - research_question
-    - hypothesis
-    - method_description
-    - experimental_setup
-    - quantitative_results
-    - limitations
-    - future_work
-
-# ==================== 高级配置 ====================
-advanced:
-  # 是否启用详细日志
-  verbose: true
-  
-  # 是否保存中间结果
-  save_intermediate: true
-  
-  # 并行执行的最大 worker 数
-  max_workers: 2
-  
-  # LLM 温度参数
-  temperature:
-    ideation: 0.8      # 创意阶段需要多样性
-    experiment: 0.2    # 代码生成需要确定性
-    writeup: 0.5       # 写作保持平衡
-    review: 0.3        # 审核需要严谨
-  
-  # 最大 token 数
-  max_tokens:
-    ideation: 4000
-    experiment: 8000
-    writeup: 4000
-    review: 2000
+  mode: real
