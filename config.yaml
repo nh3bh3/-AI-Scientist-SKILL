@@ -63,6 +63,21 @@ experiment:
     enabled: true
     max_candidates: 4
     top_k: 2
+    model_types:
+      - LogisticRegression
+      - RandomForest
+      - MLPClassifier
+      - Transformer
+    enable_gpu: true
+    max_parallel: 2
+
+  search:
+    strategy: bfts
+  bfts:
+    max_depth: 2
+    max_nodes: 8
+    branching_factor: 2
+  resume_from: null
   
   # 允许使用的 Python 包（白名单）
   allowed_packages:
@@ -136,6 +151,10 @@ review:
     check_typical_words: true     # 检查AI典型用词
     check_sentence_patterns: true # 检查句式模式
     check_generic_statements: true # 检查通用表述
+  automated_reviewer:
+    enabled: true
+  vlm_feedback:
+    enabled: true
 
 # ==================== 输出配置 ====================
 output:
